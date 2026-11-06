@@ -29,6 +29,8 @@ The standard-library unit tests use in-memory Resolve API doubles and synthetic 
 
 The doctor is a separate installed-runtime diagnostic. It can make a read-only status round trip to Resolve. A missing/stopped Console worker is a runtime warning, not proof of a code failure.
 
+`tests/test_windows_replace.py` covers the Windows inbox replace retry. It runs on Linux and stubs the host check; it does not take a real Windows file lock or open Resolve. Retryable cases are WinError 5, 32, 33, and 1224. POSIX permission errors, other Windows codes, and a denial that lasts for every attempt must fail without rewriting the destination. `tests/test_apply_windows_inbox_replace_fix.py` checks the hash-guarded one-file installer against temporary directories. Neither test is a live Windows/Resolve run.
+
 Retention regressions cover Lua-only operation cleanup, bounded cleanup frequency,
 and 30-day retention of both crashed `running` records and explicit `unknown`
 outcomes. Transport regressions ensure pinned direct mode never dispatches to

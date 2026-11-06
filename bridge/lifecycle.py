@@ -15,6 +15,24 @@ REQUEST_RECORD_MAX_AGE = 7 * 86400
 UNKNOWN_RECORD_MAX_AGE = 30 * 86400  # Running/crashed and explicit unknown outcomes need longer recovery.
 LOG_MAX_BYTES = 1024 * 1024
 
+# os.replace on Windows is MoveFileExW(MOVEFILE_REPLACE_EXISTING) and does not
+# retry. That call fails, leaving the destination unchanged, while another
+# process has the destination open without delete sharing. Resolve's Lua worker
+# opens lua-inbox.json and lua-stop.json for a short read on every pass, then
+# waits 5 ms (agent/ResolveLua.lua). Python maps the observed failure,
+# WinError 5, and the sharing/lock failures 32 and 33 to PermissionError.
+# WinError 1224 is the same failed replace when a mapped section is open, and
+# stays a plain OSError. Other permission failures, including a network ACL
+# denial (WinError 65), are not sharing races and are not retried.
+# The pause is 2 ms, not the 5 ms poll, so retries are not locked to that
+# period. 130 attempts sleep at most 258 ms here; a coarse ~15.6 ms Windows
+# timer still finishes in about 2 s, which is the finish_operation read budget.
+# Do not time this loop with time.monotonic: a regression test replaces that
+# clock with a three-value side_effect list.
+_WINDOWS_RETRYABLE_REPLACE_WINERRORS = frozenset((5, 32, 33, 1224))
+_WINDOWS_REPLACE_ATTEMPTS = 130
+_WINDOWS_REPLACE_PAUSE_SECONDS = 0.002
+
 
 def private_directory(path):
     """Keep local requests and their authentication material owner-only."""
@@ -24,8 +42,45 @@ def private_directory(path):
         path.chmod(0o700)
 
 
+def _windows_host():
+    """Isolated so tests can simulate Windows without changing os.name.
+
+    Assigning os.name = "nt" makes pathlib construct WindowsPath and abort on Linux.
+    """
+    return os.name == "nt"
+
+
+def _retryable_windows_replace(exc):
+    """True only for a Windows replace that lost a sharing race."""
+    if not _windows_host():
+        return False
+    return getattr(exc, "winerror", None) in _WINDOWS_RETRYABLE_REPLACE_WINERRORS
+
+
+def _publish_replace(temp, path):
+    """Publish one finished temp file. Retry cannot deliver it twice.
+
+    A refused Windows replace leaves the destination bytes untouched, and this
+    loop retries that same temp path. It does not rewrite or re-sign the payload.
+    """
+    source, destination = str(temp), str(path)
+    for attempt in range(_WINDOWS_REPLACE_ATTEMPTS):
+        try:
+            os.replace(source, destination)
+            return
+        except OSError as exc:
+            if attempt + 1 >= _WINDOWS_REPLACE_ATTEMPTS or not _retryable_windows_replace(exc):
+                raise
+            time.sleep(_WINDOWS_REPLACE_PAUSE_SECONDS)
+
+
 def atomic_json(path, data, indent=None):
-    """Write private JSON atomically, including the temporary file's first byte."""
+    """Write private JSON atomically, including the temporary file's first byte.
+
+    On Windows, a sharing denial while replacing the destination is retried for
+    a bounded pause and then raised unchanged. POSIX permission errors are not
+    retried.
+    """
     path = Path(path)
     temp = path.with_name(".%s.%s.tmp" % (path.name, uuid.uuid4().hex))
     fd = os.open(str(temp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -37,7 +92,7 @@ def atomic_json(path, data, indent=None):
                 os.fsync(handle.fileno())
             except OSError:
                 pass
-        os.replace(str(temp), str(path))
+        _publish_replace(temp, path)
     finally:
         temp.unlink(missing_ok=True)
 

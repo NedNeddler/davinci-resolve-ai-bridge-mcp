@@ -88,7 +88,7 @@ This optional download stays in the bridge's private Python environment. It is n
 
 If the menu is missing after installation, quit and reopen Resolve once. Refresh/restart your AI client's MCP server after setup or a tool-schema update.
 
-The Lua connector is live-tested on **macOS / Resolve Free 21.1.2.10**. Python startup remains verified on **Free 21.0.3.7 / Python 3.14.6**. Windows, Linux and other builds still need live verification.
+The Lua connector is live-tested on **macOS / Resolve Free 21.1.2.10**. Python startup remains verified on **Free 21.0.3.7 / Python 3.14.6**. Windows, Linux and other builds still need live verification. On Windows, publishing a file the Lua worker has open (`lua-inbox.json`, `lua-stop.json`) retries a sharing denial for a bounded pause and then raises the original error. That retry is covered by mocked unit tests; it has not been retested against a live Windows Resolve in this tree.
 
 <br>
 

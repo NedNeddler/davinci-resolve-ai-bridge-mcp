@@ -25,6 +25,20 @@ On Windows, install **Python 3.10+**, reopen PowerShell, and retry. You can also
 
 If setup still fails, share the final installer error and your Resolve version. Do not include your token or private client configuration.
 
+## Lua tools fail with WinError 5 replacing lua-inbox.json
+
+On Windows, `resolve_status` and `bridge_capabilities` can fail before Resolve runs the operation:
+
+```text
+Lua RPC failed ([WinError 5] Access is denied: '.lua-inbox.json.<tmp>' -> 'lua-inbox.json')
+```
+
+The Lua worker opens `lua-inbox.json` for a short read about every 5 ms. Windows refuses `os.replace` over a file that is open without delete sharing. The destination is left unchanged. v1.14.1 raises that error on the first failure, so a tool that makes several round-trips usually fails. macOS allows the replace, which is why the same build passed there.
+
+Current source retries WinError 5 (access denied), 32 (sharing violation), 33 (lock violation), and 1224 (mapped section) up to 130 times, sleeping 2 ms between tries, then raises the same error. It does not retry other permission failures, and it does not retry on macOS or Linux. A refused replace is not a second delivery. Restart the MCP client after replacing `bridge/lifecycle.py` so Python loads the new function. Resolve and the Lua worker can keep running; they do not import that file.
+
+This retry is unit-tested with mocked Windows errors on Linux. A live Windows Resolve retest is still required after it is installed. Use `tools/apply_windows_inbox_replace_fix.py` for an already installed v1.14.1 runtime. It checks hashes, writes a backup, and refuses any other file. Passing `--rollback` restores the original bytes.
+
 ## My AI Says The Bridge Is Offline
 
 In this order:
