@@ -46,7 +46,12 @@ Studio-only AI/effects or promise every API on every platform/build.
 ### Remaining limits
 
 Live current-Free validation covers macOS only. Windows/Linux native Resolve,
-Studio, render completion and large timelines remain unverified. Native render
+Studio, render completion and large timelines remain unverified. Windows
+`os.replace` onto a file the Lua worker has open fails with WinError 5;
+`atomic_json` retries WinError 5, 32, 33, and 1224 for at most 130 attempts
+with a 2 ms pause, then raises the original error. Those retries are
+mock-tested on Linux only and have not been confirmed on a live Windows
+Resolve. Native render
 calls and uncommon tool paths still need manual checks. Still images may use
 Resolve's default duration rather than the requested one; replies report the
 actual result. Source frame/audio decoding excludes timeline compositing and
